@@ -6,6 +6,7 @@ from tkinter import messagebox
 import sys
 import time
 import mediapipe as mp
+import os
 from model_utils import (ACTIONS, SEQ_LENGTH, mp_holistic, mediapipe_detection, extract_keypoints)
 
 mp_drawing = mp.solutions.drawing_utils
@@ -57,6 +58,14 @@ def real_time_detection(model):
     sentence_complete = False  # Flag to mark when sentence is complete
 
     ui_root, label_action, label_accuracy, label_sentence = create_ui()
+    detection_running = [True]
+
+    def close_ui():
+        detection_running[0] = False
+        if ui_root.winfo_exists():
+            ui_root.destroy()
+
+    ui_root.protocol("WM_DELETE_WINDOW", close_ui)
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -69,7 +78,7 @@ def real_time_detection(model):
         confidence = 0
         latest_prediction = "Uncertain"
 
-        while cap.isOpened() and not sentence_complete:
+        while cap.isOpened() and not sentence_complete and detection_running[0]:
             ret, frame = cap.read()
             if not ret:
                 continue
@@ -92,10 +101,11 @@ def real_time_detection(model):
                 # Keep the most recent frames to maintain sequence length
                 sequence = sequence[-(expected_seq_length - 1):]
 
-                label_action.config(text=f"Latest Prediction: {latest_prediction}")
-                label_accuracy.config(text=f"Accuracy: {confidence * 100:.1f}%")
-                ui_root.update_idletasks()
-                ui_root.update()
+                if detection_running[0] and ui_root.winfo_exists():
+                    label_action.config(text=f"Latest Prediction: {latest_prediction}")
+                    label_accuracy.config(text=f"Accuracy: {confidence * 100:.1f}%")
+                    ui_root.update_idletasks()
+                    ui_root.update()
 
             cv2.imshow('Sign Language Detection', image)
             key = cv2.waitKey(10) & 0xFF
@@ -105,7 +115,8 @@ def real_time_detection(model):
             elif key == ord('c'):
                 if confidence > threshold:
                     selected_words.append(latest_prediction)
-                    label_sentence.config(text=f"Selected Sentence: {' '.join(selected_words)}")
+                    if detection_running[0] and ui_root.winfo_exists():
+                        label_sentence.config(text=f"Selected Sentence: {' '.join(selected_words)}")
                     print(f"Word confirmed: {latest_prediction}")
                     sequence.clear()  # Reset sequence to start fresh for next word
                 else:
@@ -117,15 +128,17 @@ def real_time_detection(model):
                         final_sentence = ' '.join(selected_words)
                         translate_and_tts(final_sentence, target_language='en')
                         selected_words.clear()
-                        label_sentence.config(text="Selected Sentence: ")
+                        if detection_running[0] and ui_root.winfo_exists():
+                            label_sentence.config(text="Selected Sentence: ")
                         sentence_complete = True  # Stop detection after the sentence is confirmed
 
     cap.release()
     cv2.destroyAllWindows()
-    ui_root.destroy()
+    if ui_root.winfo_exists():
+        ui_root.destroy()
 
 if __name__ == "__main__":
-    trained_model_path = r"C:\Users\The Baby\Rushikesh\isl_lstm\temp\model.keras"  # Update the path as needed.
+    trained_model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model.keras")
     try:
         model = tf.keras.models.load_model(trained_model_path)
         print(f"Loaded trained model from {trained_model_path}")
